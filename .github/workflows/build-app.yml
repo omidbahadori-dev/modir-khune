@@ -54,24 +54,34 @@ jobs:
       - name: Install Pillow
         run: pip install Pillow
 
-      - name: Set custom app icon
+      - name: Set custom app icon (FIXED - remove adaptive icon)
         run: |
           python3 << 'PYEOF'
           from PIL import Image
-          import os
+          import os, shutil
           sizes = {'mipmap-mdpi': 48, 'mipmap-hdpi': 72, 'mipmap-xhdpi': 96, 'mipmap-xxhdpi': 144, 'mipmap-xxxhdpi': 192}
           src = Image.open('icon.png').convert('RGBA')
           base = 'android/app/src/main/res'
+          anydpi = os.path.join(base, 'mipmap-anydpi-v26')
+          if os.path.exists(anydpi):
+              shutil.rmtree(anydpi)
+              print('removed mipmap-anydpi-v26')
+          for root, dirs, files in os.walk(base):
+              for f in files:
+                  if f in ('ic_launcher.xml', 'ic_launcher_round.xml'):
+                      fp = os.path.join(root, f)
+                      os.remove(fp)
+                      print(f'removed {fp}')
           for folder, size in sizes.items():
               d = os.path.join(base, folder)
               os.makedirs(d, exist_ok=True)
               img = src.resize((size, size), Image.LANCZOS)
               img.save(os.path.join(d, 'ic_launcher.png'))
               img.save(os.path.join(d, 'ic_launcher_round.png'))
-          print('new transparent icon set')
+          print('FIXED icon set')
           PYEOF
 
-      - name: Use fixed debug keystore
+      - name: Use fixed debug keystore (real updates)
         run: |
           mkdir -p ~/.android
           cp khanedari-debug.keystore ~/.android/debug.keystore
