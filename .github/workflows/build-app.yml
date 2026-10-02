@@ -1,0 +1,89 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install Capacitor
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Prepare web assets
+        run: mkdir -p public && cp index.html icon.png icon-192.png manifest.json public/
+
+      - name: Init Capacitor
+        run: npx cap init "مدیر خونه" com.omidbahadori.modirkhune --web-dir=public
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Auto-increment version
+        run: |
+          python3 << 'PYEOF'
+          import re
+          p = 'android/app/build.gradle'
+          s = open(p).read()
+          run_no = int("${{ github.run_number }}")
+          s = re.sub(r'versionCode\s+\d+', f'versionCode {run_no}', s)
+          s = re.sub(r'versionName\s+"[^"]+"', f'versionName "1.0.{run_no}"', s)
+          open(p, 'w').write(s)
+          print(f'Version set: versionCode={run_no}, versionName=1.0.{run_no}')
+          PYEOF
+
+      - name: Sync web assets
+        run: npx cap sync android
+
+      - name: Install Pillow
+        run: pip install Pillow
+
+      - name: Set custom app icon
+        run: |
+          python3 << 'PYEOF'
+          from PIL import Image
+          import os
+          sizes = {'mipmap-mdpi': 48, 'mipmap-hdpi': 72, 'mipmap-xhdpi': 96, 'mipmap-xxhdpi': 144, 'mipmap-xxxhdpi': 192}
+          src = Image.open('icon.png').convert('RGBA')
+          base = 'android/app/src/main/res'
+          for folder, size in sizes.items():
+              d = os.path.join(base, folder)
+              os.makedirs(d, exist_ok=True)
+              img = src.resize((size, size), Image.LANCZOS)
+              img.save(os.path.join(d, 'ic_launcher.png'))
+              img.save(os.path.join(d, 'ic_launcher_round.png'))
+          print('new transparent icon set')
+          PYEOF
+
+      - name: Use fixed debug keystore
+        run: |
+          mkdir -p ~/.android
+          cp khanedari-debug.keystore ~/.android/debug.keystore
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
