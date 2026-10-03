@@ -34,16 +34,16 @@ jobs:
 
       - name: Auto-increment version
         run: |
-          python3 -c "
+          python3 << 'PY'
           import re, os
           p='android/app/build.gradle'
           s=open(p).read()
           run_no=int(os.environ.get('GITHUB_RUN_NUMBER','1'))
           s=re.sub(r'versionCode\s+\d+', f'versionCode {run_no}', s)
-          s=re.sub(r'versionName\s+\"[^\"]+\"', f'versionName \"1.0.{run_no}\"', s)
+          s=re.sub(r'versionName\s+"[^"]+"', f'versionName "1.0.{run_no}"', s)
           open(p,'w').write(s)
-          print(f'Version 1.0.{run_no} / {run_no}')
-          "
+          print(f"version 1.0.{run_no}")
+          PY
 
       - name: Sync
         run: npx cap sync android
@@ -57,7 +57,7 @@ jobs:
           sizes={'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
           src=Image.open('icon.png').convert('RGBA')
           base='android/app/src/main/res'
-          for d in os.listdir(base):
+          for d in list(os.listdir(base)):
               if 'anydpi' in d:
                   shutil.rmtree(os.path.join(base,d), ignore_errors=True)
           for root,_,files in os.walk(base):
@@ -71,47 +71,35 @@ jobs:
               img=src.resize((size,size), Image.LANCZOS)
               img.save(os.path.join(d,'ic_launcher.png'))
               img.save(os.path.join(d,'ic_launcher_round.png'))
-          print('icons fixed')
           PY
 
       - name: Prepare keystore
-        run: |
-          cp modirkhune-release.keystore android/app/modirkhune-release.keystore
-          ls -lh android/app/*.keystore
+        run: cp modirkhune-release.keystore android/app/modirkhune-release.keystore
 
       - name: Configure signing
         run: |
           python3 << 'PY'
           p='android/app/build.gradle'
           s=open(p).read()
-          cfg=''' signingConfigs {
-                  release {
-                      storeFile file('modirkhune-release.keystore')
-                      storePassword 'ModirKhune2026#Release!'
-                      keyAlias 'modirkhune'
-                      keyPassword 'ModirKhune2026#Release!'
-                  }
-              }
-          '''
+          cfg=" signingConfigs {\n release {\n storeFile file('modirkhune-release.keystore')\n storePassword 'ModirKhune2026#Release!'\n keyAlias 'modirkhune'\n keyPassword 'ModirKhune2026#Release!'\n }\n }\n"
           if 'signingConfigs' not in s:
               s=s.replace('buildTypes {', cfg+'\n buildTypes {')
           s=s.replace('release {\n minifyEnabled false', 'release {\n signingConfig signingConfigs.release\n minifyEnabled false')
           open(p,'w').write(s)
+          print("signing ok")
           PY
 
       - name: Build Release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease
           ls -lh app/build/outputs/apk/release/
 
       - name: Rename APK
-        run: |
-          cp android/app/build/outputs/apk/release/app-release.apk modir-khune-v1.0.${{ github.run_number }}.apk
-          ls -lh *.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk modir-khune-v1.0.${{ github.run_number }}.apk
 
-      - name: Upload Artifact (backup)
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release
@@ -122,10 +110,7 @@ jobs:
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: مدیر خونه v1.0.${{ github.run_number }}
-          body: |
-            آپدیت خودکار - نسخه 1.0.${{ github.run_number }}
-            تغییرات: ${{ github.event.head_commit.message }}
-            دانلود مستقیم APK در پایین
+          body: نسخه جدید - تغییرات: ${{ github.event.head_commit.message }}
           files: modir-khune-v1.0.${{ github.run_number }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
