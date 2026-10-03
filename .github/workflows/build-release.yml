@@ -42,7 +42,6 @@ jobs:
           s=re.sub(r'versionCode\s+\d+', f'versionCode {run_no}', s)
           s=re.sub(r'versionName\s+"[^"]+"', f'versionName "1.0.{run_no}"', s)
           open(p,'w').write(s)
-          print(f"version 1.0.{run_no}")
           PY
 
       - name: Sync
@@ -63,8 +62,10 @@ jobs:
           for root,_,files in os.walk(base):
               for f in files:
                   if f in ('ic_launcher.xml','ic_launcher_round.xml'):
-                      try: os.remove(os.path.join(root,f))
-                      except: pass
+                      try:
+                          os.remove(os.path.join(root,f))
+                      except:
+                          pass
           for folder,size in sizes.items():
               d=os.path.join(base,folder)
               os.makedirs(d,exist_ok=True)
@@ -86,7 +87,6 @@ jobs:
               s=s.replace('buildTypes {', cfg+'\n buildTypes {')
           s=s.replace('release {\n minifyEnabled false', 'release {\n signingConfig signingConfigs.release\n minifyEnabled false')
           open(p,'w').write(s)
-          print("signing ok")
           PY
 
       - name: Build Release APK
@@ -94,10 +94,10 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
-          ls -lh app/build/outputs/apk/release/
+           ls -lh app/build/outputs/apk/release/
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk modir-khune-v1.0.${{ github.run_number }}.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk modir-khune.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -109,8 +109,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: مدیر خونه v1.0.${{ github.run_number }}
-          body: نسخه جدید - تغییرات: ${{ github.event.head_commit.message }}
-          files: modir-khune-v1.0.${{ github.run_number }}.apk
+          name: v1.0.${{ github.run_number }}
+          body: Auto build release APK
+          files: modir-khune.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
