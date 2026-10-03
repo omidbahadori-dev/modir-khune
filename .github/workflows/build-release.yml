@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,13 +35,14 @@ jobs:
       - name: Auto-increment version
         run: |
           python3 -c "
-          import re
+          import re, os
           p='android/app/build.gradle'
           s=open(p).read()
-          run_no=${{ github.run_number }}
+          run_no=int(os.environ.get('GITHUB_RUN_NUMBER','1'))
           s=re.sub(r'versionCode\s+\d+', f'versionCode {run_no}', s)
           s=re.sub(r'versionName\s+\"[^\"]+\"', f'versionName \"1.0.{run_no}\"', s)
           open(p,'w').write(s)
+          print(f'Version 1.0.{run_no} / {run_no}')
           "
 
       - name: Sync
@@ -48,25 +51,28 @@ jobs:
       - name: Icon fix
         run: |
           pip install Pillow
-          python3 -c "
+          python3 << 'PY'
           from PIL import Image
           import os, shutil
           sizes={'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
           src=Image.open('icon.png').convert('RGBA')
           base='android/app/src/main/res'
-          import pathlib
-          [shutil.rmtree(os.path.join(base,d)) for d in os.listdir(base) if 'anydpi' in d]
+          for d in os.listdir(base):
+              if 'anydpi' in d:
+                  shutil.rmtree(os.path.join(base,d), ignore_errors=True)
           for root,_,files in os.walk(base):
               for f in files:
                   if f in ('ic_launcher.xml','ic_launcher_round.xml'):
-                      os.remove(os.path.join(root,f))
+                      try: os.remove(os.path.join(root,f))
+                      except: pass
           for folder,size in sizes.items():
               d=os.path.join(base,folder)
               os.makedirs(d,exist_ok=True)
               img=src.resize((size,size), Image.LANCZOS)
               img.save(os.path.join(d,'ic_launcher.png'))
               img.save(os.path.join(d,'ic_launcher_round.png'))
-          "
+          print('icons fixed')
+          PY
 
       - name: Prepare keystore
         run: |
@@ -75,7 +81,7 @@ jobs:
 
       - name: Configure signing
         run: |
-          python3 -c "
+          python3 << 'PY'
           p='android/app/build.gradle'
           s=open(p).read()
           cfg=''' signingConfigs {
@@ -91,18 +97,35 @@ jobs:
               s=s.replace('buildTypes {', cfg+'\n buildTypes {')
           s=s.replace('release {\n minifyEnabled false', 'release {\n signingConfig signingConfigs.release\n minifyEnabled false')
           open(p,'w').write(s)
-          print('signing ok')
-          "
+          PY
 
-      - name: Build Release
+      - name: Build Release APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --stacktrace
-          ls -R app/build/outputs/apk/release/
+          ls -lh app/build/outputs/apk/release/
 
-      - name: Upload APK
+      - name: Rename APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk modir-khune-v1.0.${{ github.run_number }}.apk
+          ls -lh *.apk
+
+      - name: Upload Artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: android/app/build/outputs/apk/release/*.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: مدیر خونه v1.0.${{ github.run_number }}
+          body: |
+            آپدیت خودکار - نسخه 1.0.${{ github.run_number }}
+            تغییرات: ${{ github.event.head_commit.message }}
+            دانلود مستقیم APK در پایین
+          files: modir-khune-v1.0.${{ github.run_number }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
