@@ -5,24 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -36,56 +27,82 @@ jobs:
       - name: Init Capacitor
         run: npx cap init "مدیر خونه" com.omidbahadori.modirkhune --web-dir=public
 
-      - name: Add Android platform
+      - name: Add Android
         run: npx cap add android
 
       - name: Auto-increment version
         run: |
-          python3 << 'PYEOF'
+          python3 -c "
           import re
-          p = 'android/app/build.gradle'
-          s = open(p).read()
-          run_no = int("${{ github.run_number }}")
-          s = re.sub(r'versionCode\s+\d+', f'versionCode {run_no}', s)
-          s = re.sub(r'versionName\s+"[^"]+"', f'versionName "1.0.{run_no}"', s)
-          open(p, 'w').write(s)
-          print(f'Version set: versionCode={run_no}, versionName=1.0.{run_no}')
-          PYEOF
+          p='android/app/build.gradle'
+          s=open(p).read()
+          run_no=${{ github.run_number }}
+          s=re.sub(r'versionCode\s+\d+', f'versionCode {run_no}', s)
+          s=re.sub(r'versionName\s+\"[^\"]+\"', f'versionName \"1.0.{run_no}\"', s)
+          open(p,'w').write(s)
+          "
 
-      - name: Sync web assets
+      - name: Sync
         run: npx cap sync android
 
-      - name: Install Pillow
-        run: pip install Pillow
-
-      - name: Set custom app icon (FIXED - remove adaptive icon)
+      - name: Icon fix
         run: |
-          python3 << 'PYEOF'
+          pip install Pillow
+          python3 -c "
           from PIL import Image
           import os, shutil
-          sizes = {'mipmap-mdpi': 48, 'mipmap-hdpi': 72, 'mipmap-xhdpi': 96, 'mipmap-xxhdpi': 144, 'mipmap-xxxhdpi': 192}
-          src = Image.open('icon.png').convert('RGBA')
-          base = 'android/app/src/main/res'
-          anydpi = os.path.join(base, 'mipmap-anydpi-v26')
-          if os.path.exists(anydpi):
-              shutil.rmtree(anydpi)
-              print('removed mipmap-anydpi-v26')
-          for root, dirs, files in os.walk(base):
+          sizes={'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
+          src=Image.open('icon.png').convert('RGBA')
+          base='android/app/src/main/res'
+          import pathlib
+          [shutil.rmtree(os.path.join(base,d)) for d in os.listdir(base) if 'anydpi' in d]
+          for root,_,files in os.walk(base):
               for f in files:
-                  if f in ('ic_launcher.xml', 'ic_launcher_round.xml'):
-                      fp = os.path.join(root, f)
-                      os.remove(fp)
-                      print(f'removed {fp}')
-          for folder, size in sizes.items():
-              d = os.path.join(base, folder)
-              os.makedirs(d, exist_ok=True)
-              img = src.resize((size, size), Image.LANCZOS)
-              img.save(os.path.join(d, 'ic_launcher.png'))
-              img.save(os.path.join(d, 'ic_launcher_round.png'))
-          print('FIXED icon set')
-          PYEOF
+                  if f in ('ic_launcher.xml','ic_launcher_round.xml'):
+                      os.remove(os.path.join(root,f))
+          for folder,size in sizes.items():
+              d=os.path.join(base,folder)
+              os.makedirs(d,exist_ok=True)
+              img=src.resize((size,size), Image.LANCZOS)
+              img.save(os.path.join(d,'ic_launcher.png'))
+              img.save(os.path.join(d,'ic_launcher_round.png'))
+          "
 
-      - name: Decode release keystore
+      - name: Prepare keystore
         run: |
-          if [ -n "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" ]; then
-            printf '%
+          cp modirkhune-release.keystore android/app/modirkhune-release.keystore
+          ls -lh android/app/*.keystore
+
+      - name: Configure signing
+        run: |
+          python3 -c "
+          p='android/app/build.gradle'
+          s=open(p).read()
+          cfg=''' signingConfigs {
+                  release {
+                      storeFile file('modirkhune-release.keystore')
+                      storePassword 'ModirKhune2026#Release!'
+                      keyAlias 'modirkhune'
+                      keyPassword 'ModirKhune2026#Release!'
+                  }
+              }
+          '''
+          if 'signingConfigs' not in s:
+              s=s.replace('buildTypes {', cfg+'\n buildTypes {')
+          s=s.replace('release {\n minifyEnabled false', 'release {\n signingConfig signingConfigs.release\n minifyEnabled false')
+          open(p,'w').write(s)
+          print('signing ok')
+          "
+
+      - name: Build Release
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+          ls -R app/build/outputs/apk/release/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: android/app/build/outputs/apk/release/*.apk
