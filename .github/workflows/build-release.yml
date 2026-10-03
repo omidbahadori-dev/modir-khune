@@ -62,10 +62,8 @@ jobs:
           for root,_,files in os.walk(base):
               for f in files:
                   if f in ('ic_launcher.xml','ic_launcher_round.xml'):
-                      try:
-                          os.remove(os.path.join(root,f))
-                      except:
-                          pass
+                      try: os.remove(os.path.join(root,f))
+                      except: pass
           for folder,size in sizes.items():
               d=os.path.join(base,folder)
               os.makedirs(d,exist_ok=True)
@@ -97,7 +95,7 @@ jobs:
            ls -lh app/build/outputs/apk/release/
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk modir-khune.apk
+        run: cp android/app/build/outputs/apk/release/*.apk modir-khune.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
